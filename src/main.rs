@@ -154,6 +154,10 @@ impl Enemy {
         //if roll > enemy ac attack hits, if not it miss and no damage
         let attack_roll = roll_die(&Dies::D20);
 
+        if self.get_current_state() == States::Dead {
+            println!(" {} is dead, cant attack!", self.name);
+            return;
+        }
         if attack_roll >= player.get_armor_class() {
             println!(
                 "{} attack hit! you rolled a {} which is greater than enemy's ac of {}",
