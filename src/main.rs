@@ -105,16 +105,6 @@ impl Enemy {
     }
 }
 fn main() {
-    let test_user = Player {
-        name: String::from("kevin"),
-        current_state: States::Alive,
-        health: 10,
-        attack: 5,
-        weapon: Weapons {
-            weapon_type: WeaponTypes::Club,
-            die: Dies::D4,
-        },
-    };
     let mut test_enemy = Enemy {
         name: String::from("goblin"),
         current_state: States::Alive,
@@ -125,28 +115,24 @@ fn main() {
             die: Dies::D4,
         },
     };
-    /*println!(
-        "player name: {}, health: {}, attack: {}",
-        test_user.name, test_user.health, test_user.attack
-    );*/
-    // lets start implementing the combat system
+    // player selects name
     let player_name = get_player_name();
     let mut new_player = match player_name {
         Ok(name) => Player::init_player(name),
         Err(error) => panic!("failed to get player name {error:?}"),
     };
     println!("player: {} has been succesfully created!", new_player.name);
-    println!(
-        "Your stats:\nHealth: {},Attack: {}",
-        new_player.health, new_player.attack
-    );
+
+    // player selects weapon
     let player_weapon = get_player_starter_weapon();
     let mut new_player_weapon = match player_weapon {
         Ok(weapon) => new_player.change_weapon(weapon),
-        Err(error) => panic!("failed to get player name {error:?}"),
+        Err(error) => panic!("please enter a valid starter weapon. club,mace,greatclub {error:?}"),
     };
+    // testing attack
     new_player.attack(&mut test_enemy);
     test_enemy.attack(&mut new_player);
+    // testing if weapon is selected
     println!(
         "{} has the weapon {}",
         new_player.name,
@@ -161,7 +147,7 @@ fn get_player_name() -> Result<String, GameErrors> {
 }
 fn get_player_starter_weapon() -> Result<Weapons, GameErrors> {
     println!("Oh what weapon shall you choose?");
-    println!("Please enter one of the following\n club\nmace\ngreatclub");
+    println!("Please enter one of the following\nclub\nmace\ngreatclub");
     let mut player_weapon = String::new();
     io::stdin().read_line(&mut player_weapon)?;
     match player_weapon.trim() {
