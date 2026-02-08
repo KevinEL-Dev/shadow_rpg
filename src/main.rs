@@ -1,13 +1,21 @@
 use rand::Rng;
 use std::io;
+use std::num::ParseIntError;
 #[derive(Debug)]
 enum GameErrors {
     Io(io::Error),
+    Parse(ParseIntError),
     InvalidWeapon,
+    InvalidAction,
 }
 impl From<io::Error> for GameErrors {
     fn from(e: io::Error) -> Self {
         GameErrors::Io(e)
+    }
+}
+impl From<ParseIntError> for GameErrors {
+    fn from(e: ParseIntError) -> Self {
+        GameErrors::Parse(e)
     }
 }
 enum WeaponTypes {
@@ -19,7 +27,18 @@ enum Dies {
     D4,
     D6,
     D8,
+    D20,
 }
+enum MainActions {
+    Attack,
+}
+enum ArmorType {
+    NoArmor(i32),
+    LightArmor(i32),
+    MediumArmor(i32),
+    HeavyArmor(i32),
+}
+#[derive(PartialEq)]
 enum States {
     Alive,
     Dead,
@@ -30,6 +49,7 @@ struct Player {
     health: i32,
     attack: i32,
     weapon: Weapons,
+    armor: ArmorType,
 }
 struct Enemy {
     name: String,
@@ -37,6 +57,7 @@ struct Enemy {
     health: i32,
     attack: i32,
     weapon: Weapons,
+    armor: ArmorType,
 }
 struct Weapons {
     weapon_type: WeaponTypes,
@@ -64,6 +85,7 @@ impl Player {
             name,
             health: 10,
             attack: 5,
+            armor: ArmorType::NoArmor(10),
             current_state: States::Alive,
             weapon: Weapons {
                 weapon_type: WeaponTypes::Club,
@@ -76,13 +98,47 @@ impl Player {
         self.weapon = new_weapon;
     }
     fn attack(&self, enemy: &mut Enemy) {
-        // get the weapon from the struct.
+        //if roll > enemy ac attack hits, if not it miss and no damage
+        let attack_roll = roll_die(&Dies::D20);
 
-        let attack_roll = roll_die(self.weapon.get_die());
-        // have a separte function that will take the Die enum and pass that as a argument
-        enemy.take_damage(attack_roll);
-        // that function will then use the range from 1-N (DN). probably use a match in this case
-        // what should we return from that function? a int between 1-N.
+        if attack_roll >= enemy.get_armor_class() {
+            println!(
+                "{} attack hit! you rolled a {} which is greater than enemy's ac of {}",
+                self.name,
+                attack_roll,
+                enemy.get_armor_class()
+            );
+            let damage_roll = roll_die(self.weapon.get_die());
+            // have a separte function that will take the Die enum and pass that as a argument
+            enemy.take_damage(damage_roll);
+        } else {
+            println!(
+                "oh no {} missed. you rolled a {} which is less than {}",
+                self.name,
+                attack_roll,
+                enemy.get_armor_class()
+            );
+        }
+    }
+    fn do_action(&mut self, action: MainActions, enemy: &mut Enemy) {
+        match action {
+            MainActions::Attack => self.attack(enemy),
+        }
+    }
+    fn get_health(&self) -> i32 {
+        self.health
+    }
+    fn get_armor_class(&self) -> i32 {
+        match self.armor {
+            ArmorType::NoArmor(armor_base) => armor_base,
+            _ => 10,
+        }
+    }
+    fn get_current_state(&self) -> States {
+        match self.current_state {
+            States::Alive => States::Alive,
+            States::Dead => States::Dead,
+        }
     }
 }
 impl Enemy {
@@ -94,14 +150,47 @@ impl Enemy {
             println!("{} has died", self.name);
         }
     }
-    fn attack(&self, enemy: &mut Player) {
-        // get the weapon from the struct.
+    fn attack(&self, player: &mut Player) {
+        //if roll > enemy ac attack hits, if not it miss and no damage
+        let attack_roll = roll_die(&Dies::D20);
 
-        let attack_roll = roll_die(self.weapon.get_die());
-        // have a separte function that will take the Die enum and pass that as a argument
-        enemy.take_damage(attack_roll);
-        // that function will then use the range from 1-N (DN). probably use a match in this case
-        // what should we return from that function? a int between 1-N.
+        if attack_roll >= player.get_armor_class() {
+            println!(
+                "{} attack hit! you rolled a {} which is greater than enemy's ac of {}",
+                self.name,
+                attack_roll,
+                player.get_armor_class()
+            );
+            let damage_roll = roll_die(self.weapon.get_die());
+            player.take_damage(damage_roll);
+        } else {
+            println!(
+                "oh no {} missed. you rolled a {} which is less than {}",
+                self.name,
+                attack_roll,
+                player.get_armor_class()
+            );
+        }
+    }
+    fn _do_action(&mut self, action: MainActions, player: &mut Player) {
+        match action {
+            MainActions::Attack => self.attack(player),
+        }
+    }
+    fn get_health(&self) -> i32 {
+        self.health
+    }
+    fn get_armor_class(&self) -> i32 {
+        match self.armor {
+            ArmorType::NoArmor(armor_base) => armor_base,
+            _ => 10,
+        }
+    }
+    fn get_current_state(&self) -> States {
+        match self.current_state {
+            States::Alive => States::Alive,
+            States::Dead => States::Dead,
+        }
     }
 }
 fn main() {
@@ -114,6 +203,7 @@ fn main() {
             weapon_type: WeaponTypes::Club,
             die: Dies::D4,
         },
+        armor: ArmorType::NoArmor(10),
     };
     // player selects name
     let player_name = get_player_name();
@@ -125,19 +215,30 @@ fn main() {
 
     // player selects weapon
     let player_weapon = get_player_starter_weapon();
-    let mut new_player_weapon = match player_weapon {
+    match player_weapon {
         Ok(weapon) => new_player.change_weapon(weapon),
         Err(error) => panic!("please enter a valid starter weapon. club,mace,greatclub {error:?}"),
     };
-    // testing attack
-    new_player.attack(&mut test_enemy);
-    test_enemy.attack(&mut new_player);
+
     // testing if weapon is selected
     println!(
         "{} has the weapon {}",
         new_player.name,
         print_weapon_type(&new_player.weapon.weapon_type)
     );
+
+    while new_player.get_current_state() == States::Alive
+        && test_enemy.get_current_state() == States::Alive
+    {
+        let player_action = get_action();
+        match player_action {
+            Ok(action) => new_player.do_action(action, &mut test_enemy),
+            Err(error) => panic!("something went wrong {error:?}"),
+        }
+        test_enemy.attack(&mut new_player);
+    }
+    println!("{} has {} health", new_player.name, new_player.get_health());
+    println!("{} has {} health", test_enemy.name, test_enemy.get_health());
 }
 fn get_player_name() -> Result<String, GameErrors> {
     println!("Please enter the name of your player");
@@ -153,8 +254,21 @@ fn get_player_starter_weapon() -> Result<Weapons, GameErrors> {
     match player_weapon.trim() {
         "club" => Ok(Weapons::init_weapon(WeaponTypes::Club, Dies::D4)),
         "greatclub" => Ok(Weapons::init_weapon(WeaponTypes::Greatclub, Dies::D8)),
-        "dagger" => Ok(Weapons::init_weapon(WeaponTypes::Mace, Dies::D6)),
+        "mace" => Ok(Weapons::init_weapon(WeaponTypes::Mace, Dies::D6)),
         _ => Err(GameErrors::InvalidWeapon),
+    }
+}
+fn get_action() -> Result<MainActions, GameErrors> {
+    println!("\n[ ACTION ]");
+    println!("1) Attack");
+    println!(">");
+    let mut player_action = String::new();
+    io::stdin().read_line(&mut player_action)?;
+    let player_action = player_action.trim();
+    let player_action_number = player_action.parse()?;
+    match player_action_number {
+        1 => Ok(MainActions::Attack),
+        _ => Err(GameErrors::InvalidAction),
     }
 }
 fn roll_die(die: &Dies) -> i32 {
@@ -162,6 +276,7 @@ fn roll_die(die: &Dies) -> i32 {
         Dies::D4 => rand::thread_rng().gen_range(1..=4),
         Dies::D6 => rand::thread_rng().gen_range(1..=6),
         Dies::D8 => rand::thread_rng().gen_range(1..=8),
+        Dies::D20 => rand::thread_rng().gen_range(1..=20),
     }
 }
 fn print_weapon_type(weapon_type: &WeaponTypes) -> String {
