@@ -1,4 +1,5 @@
 use rand::Rng;
+use std::cmp;
 use std::io;
 use std::num::ParseIntError;
 #[derive(Debug)]
@@ -31,6 +32,7 @@ enum Dies {
 }
 enum MainActions {
     Attack,
+    Dodge,
 }
 enum ArmorType {
     NoArmor(i32),
@@ -43,6 +45,11 @@ enum States {
     Alive,
     Dead,
 }
+#[derive(PartialEq)]
+enum Status {
+    Dodged,
+    None,
+}
 struct Player {
     name: String,
     current_state: States,
@@ -50,6 +57,7 @@ struct Player {
     attack: i32,
     weapon: Weapons,
     armor: ArmorType,
+    status: Status,
 }
 struct Enemy {
     name: String,
@@ -58,6 +66,7 @@ struct Enemy {
     attack: i32,
     weapon: Weapons,
     armor: ArmorType,
+    status: Status,
 }
 struct Weapons {
     weapon_type: WeaponTypes,
@@ -91,15 +100,28 @@ impl Player {
                 weapon_type: WeaponTypes::Club,
                 die: Dies::D4,
             },
+            status: Status::None,
         }
     }
     fn change_weapon(&mut self, new_weapon: Weapons) {
         // this transfers ownership i believe
         self.weapon = new_weapon;
     }
-    fn attack(&self, enemy: &mut Enemy) {
+    fn attack(&mut self, enemy: &mut Enemy) {
         //if roll > enemy ac attack hits, if not it miss and no damage
-        let attack_roll = roll_die(&Dies::D20);
+        // before an enemy attacks we must check whether the enemy we are attacking last dodged
+        // if so we roll at disadvantage
+        self.new_turn();
+        let mut attack_roll = 0;
+        if enemy.get_current_status() == Status::Dodged {
+            println!(
+                "{} has dodged! So you will roll at a disadvantage",
+                enemy.name
+            );
+            attack_roll = roll_disadvantage(&Dies::D20);
+        } else {
+            attack_roll = roll_die(&Dies::D20);
+        }
 
         if attack_roll >= enemy.get_armor_class() {
             println!(
@@ -120,9 +142,14 @@ impl Player {
             );
         }
     }
+    fn dodge(&mut self) {
+        self.status = Status::Dodged;
+        println!("{} has dodged", self.name);
+    }
     fn do_action(&mut self, action: MainActions, enemy: &mut Enemy) {
         match action {
             MainActions::Attack => self.attack(enemy),
+            MainActions::Dodge => self.dodge(),
         }
     }
     fn get_health(&self) -> i32 {
@@ -140,6 +167,22 @@ impl Player {
             States::Dead => States::Dead,
         }
     }
+    fn new_turn(&mut self) {
+        let curr_status = self.get_current_status();
+        match curr_status {
+            Status::Dodged => self.set_current_status(Status::None),
+            Status::None => self.set_current_status(Status::None),
+        }
+    }
+    fn get_current_status(&self) -> Status {
+        match self.status {
+            Status::Dodged => Status::Dodged,
+            Status::None => Status::None,
+        }
+    }
+    fn set_current_status(&mut self, status: Status) {
+        self.status = status;
+    }
 }
 impl Enemy {
     fn take_damage(&mut self, damage_number: i32) {
@@ -150,9 +193,20 @@ impl Enemy {
             println!("{} has died", self.name);
         }
     }
-    fn attack(&self, player: &mut Player) {
+    fn attack(&mut self, player: &mut Player) {
         //if roll > enemy ac attack hits, if not it miss and no damage
-        let attack_roll = roll_die(&Dies::D20);
+
+        self.new_turn();
+        let mut attack_roll = 0;
+        if player.get_current_status() == Status::Dodged {
+            println!(
+                "{} has dodged! So you will roll at a disadvantage",
+                player.name
+            );
+            attack_roll = roll_disadvantage(&Dies::D20);
+        } else {
+            attack_roll = roll_die(&Dies::D20);
+        }
 
         if self.get_current_state() == States::Dead {
             println!(" {} is dead, cant attack!", self.name);
@@ -176,9 +230,15 @@ impl Enemy {
             );
         }
     }
+    fn dodge(&mut self) {
+        self.status = Status::Dodged;
+        println!("{} has dodged", self.name);
+    }
     fn _do_action(&mut self, action: MainActions, player: &mut Player) {
+        self.new_turn();
         match action {
             MainActions::Attack => self.attack(player),
+            MainActions::Dodge => self.dodge(),
         }
     }
     fn get_health(&self) -> i32 {
@@ -196,6 +256,22 @@ impl Enemy {
             States::Dead => States::Dead,
         }
     }
+    fn new_turn(&mut self) {
+        let curr_status = self.get_current_status();
+        match curr_status {
+            Status::Dodged => self.set_current_status(Status::None),
+            Status::None => self.set_current_status(Status::None),
+        }
+    }
+    fn get_current_status(&self) -> Status {
+        match self.status {
+            Status::Dodged => Status::Dodged,
+            Status::None => Status::None,
+        }
+    }
+    fn set_current_status(&mut self, status: Status) {
+        self.status = status;
+    }
 }
 fn main() {
     let mut test_enemy = Enemy {
@@ -208,6 +284,7 @@ fn main() {
             die: Dies::D4,
         },
         armor: ArmorType::NoArmor(10),
+        status: Status::None,
     };
     // player selects name
     let player_name = get_player_name();
@@ -265,6 +342,7 @@ fn get_player_starter_weapon() -> Result<Weapons, GameErrors> {
 fn get_action() -> Result<MainActions, GameErrors> {
     println!("\n[ ACTION ]");
     println!("1) Attack");
+    println!("2) Dodge");
     println!(">");
     let mut player_action = String::new();
     io::stdin().read_line(&mut player_action)?;
@@ -272,6 +350,7 @@ fn get_action() -> Result<MainActions, GameErrors> {
     let player_action_number = player_action.parse()?;
     match player_action_number {
         1 => Ok(MainActions::Attack),
+        2 => Ok(MainActions::Dodge),
         _ => Err(GameErrors::InvalidAction),
     }
 }
@@ -289,4 +368,11 @@ fn print_weapon_type(weapon_type: &WeaponTypes) -> String {
         WeaponTypes::Mace => String::from("Mace"),
         WeaponTypes::Greatclub => String::from("GreatClub"),
     }
+}
+fn roll_disadvantage(die: &Dies) -> i32 {
+    let roll1 = roll_die(die);
+    println!("your first roll is {}", roll1);
+    let roll2 = roll_die(die);
+    println!("your second roll is {}", roll2);
+    cmp::min(roll1, roll2)
 }
