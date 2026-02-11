@@ -1,3 +1,4 @@
+use percentage::Percentage;
 use rand::Rng;
 use std::cmp;
 use std::io;
@@ -53,6 +54,7 @@ enum Status {
 struct Player {
     name: String,
     current_state: States,
+    max_health: i32,
     health: i32,
     attack: i32,
     weapon: Weapons,
@@ -62,6 +64,7 @@ struct Player {
 struct Enemy {
     name: String,
     current_state: States,
+    max_health: i32,
     health: i32,
     attack: i32,
     weapon: Weapons,
@@ -92,6 +95,7 @@ impl Player {
     fn init_player(name: String) -> Self {
         Self {
             name,
+            max_health: 10,
             health: 10,
             attack: 5,
             armor: ArmorType::NoArmor(10),
@@ -111,7 +115,6 @@ impl Player {
         //if roll > enemy ac attack hits, if not it miss and no damage
         // before an enemy attacks we must check whether the enemy we are attacking last dodged
         // if so we roll at disadvantage
-        self.new_turn();
         let mut attack_roll = 0;
         if enemy.get_current_status() == Status::Dodged {
             println!(
@@ -147,6 +150,7 @@ impl Player {
         println!("{} has dodged", self.name);
     }
     fn do_action(&mut self, action: MainActions, enemy: &mut Enemy) {
+        self.new_turn();
         match action {
             MainActions::Attack => self.attack(enemy),
             MainActions::Dodge => self.dodge(),
@@ -195,8 +199,6 @@ impl Enemy {
     }
     fn attack(&mut self, player: &mut Player) {
         //if roll > enemy ac attack hits, if not it miss and no damage
-
-        self.new_turn();
         let mut attack_roll = 0;
         if player.get_current_status() == Status::Dodged {
             println!(
@@ -234,7 +236,12 @@ impl Enemy {
         self.status = Status::Dodged;
         println!("{} has dodged", self.name);
     }
-    fn _do_action(&mut self, action: MainActions, player: &mut Player) {
+    fn do_action(&mut self, action: MainActions, player: &mut Player) {
+        self.new_turn();
+        if let States::Dead = self.get_current_state() {
+            println!("Cant act cause im dead");
+            return;
+        }
         self.new_turn();
         match action {
             MainActions::Attack => self.attack(player),
@@ -272,12 +279,28 @@ impl Enemy {
     fn set_current_status(&mut self, status: Status) {
         self.status = status;
     }
+    fn enemy_ai(&self, player: &mut Player) -> MainActions {
+        // check self health. if lower than 25
+        let percentage = Percentage::from(25);
+        let health_threshold = percentage.apply_to(self.max_health);
+
+        if health_threshold >= self.health {
+            if let Status::Dodged = self.get_current_status() {
+                return MainActions::Attack;
+            }
+            println!("{} health is below 25%, time to dodge", self.name);
+            return MainActions::Dodge;
+        } else {
+            return MainActions::Attack;
+        }
+    }
 }
 fn main() {
     let mut test_enemy = Enemy {
         name: String::from("goblin"),
         current_state: States::Alive,
         health: 8,
+        max_health: 8,
         attack: 5,
         weapon: Weapons {
             weapon_type: WeaponTypes::Club,
@@ -316,7 +339,8 @@ fn main() {
             Ok(action) => new_player.do_action(action, &mut test_enemy),
             Err(error) => panic!("something went wrong {error:?}"),
         }
-        test_enemy.attack(&mut new_player);
+        let ai_choice = test_enemy.enemy_ai(&mut new_player);
+        test_enemy.do_action(ai_choice, &mut new_player);
     }
     println!("{} has {} health", new_player.name, new_player.get_health());
     println!("{} has {} health", test_enemy.name, test_enemy.get_health());
